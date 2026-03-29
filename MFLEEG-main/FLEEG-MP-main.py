@@ -67,108 +67,108 @@ if __name__ == "__main__":
     )
 
     fold_partition_list = []
+    train_folds = Common_config["train_folds"]
     for idx_client in range(Common_config["num_clients"]):
         client_config = Client_config_list[idx_client]
         num_subjects = client_config["num_subjects"]
-        test_num = 1
-        train_num = num_subjects - test_num
 
-        # 固定划分：前train_num个subject用于训练+测试，后test_num个subject用于验证
-        train_val_subjects = list(range(train_num))  # [0, 1, ..., train_num-1]
-        test_subjects = list(range(train_num, num_subjects))  # [train_num, ..., num_subjects-1]
+        # 校验subject数量是否满足要求
+        if num_subjects < train_folds:
+            raise ValueError(
+                f"Client {idx_client} has only {num_subjects} subjects, but need at least {train_folds} for 5-fold training!")
 
-        # 存储划分信息：只跑一个fold，所以test_index就是所有train_test_folds
-        test_set = [test_subjects]  # 所有训练+测试fold作为一个整体
-        fold_partition_list.append({
-            "train_val_folds": train_val_subjects,
-            "test_folds": test_subjects,
-            "test_set": test_set
-        })
+        client_partitions = []
+        for i in range(train_folds):
+            # 第i次训练（从0开始）：取倒数第i+1个subject为测试集（i从0到4对应倒数第1到倒数第5）
+            test_subject = num_subjects - (i + 1)  # 测试集subject索引
+            train_val_subjects = [s for s in range(num_subjects) if s != test_subject]  # 剩余为训练+验证集
 
-        get_logger().info(f"Client {idx_client}: total {num_subjects} subjects, "
-                          f"train+val folds {train_val_subjects}, "
-                          f"test folds {test_subjects}")
+            client_partitions.append([test_subject])
+            get_logger().info(f"Client {idx_client} - Train {i + 1}/{train_folds}: total {num_subjects} subjects, "
+                              f"train+val folds {train_val_subjects}, "
+                              f"test fold {test_subject}")
+        fold_partition_list.append(client_partitions)
 
-        # 只跑一个fold（取消交叉验证）
-    idx_fold = 0
-    get_logger().info("============ Train with fixed split (no cross-validation) ============")
+    for idx_fold in range(train_folds):
+        get_logger().info(
+            f"============ Train {idx_fold + 1}/{train_folds} (fixed split: test on last {idx_fold + 1}th subject) ============")
 
-    queue_network = CommunicationNetwork(Common_config)
-    pool = TorchProcessPool(
-        initargs=[[], {}, {"queue_network": queue_network}],
-    )
-
-    # spaw the process for the server
-    pool.submit(
-        forward,
-        server,
-        Common_config,
-        Client_config_list,
-        idx_fold,
-        base_dir_temp_local_models,
-        base_dir_client_weights
-    )
-
-    # spaw the process for the clients
-    client_future_list = []
-    for idx_client in range(Common_config["num_clients"]):
-        # get the config & results saving folder direction for the current client
-        client_config = Client_config_list[idx_client]
-        Client_base_dir = Client_base_dir_list[idx_client]
-
-        # 获取当前client的划分信息
-        partition_info = fold_partition_list[idx_client]
-        test_index = partition_info["test_set"][idx_fold]  # 取第一个（也是唯一一个）fold
-
-        # spaw the process for the client
-        client_future = pool.submit(
-            forward,
-            client,
-            idx_client,
-            idx_fold,
-            test_index,
-            Client_base_dir,
-            base_dir_temp_local_models,
-            Common_config,
-            client_config,
-            Data_array_list[idx_client],
+        queue_network = CommunicationNetwork(Common_config)
+        pool = TorchProcessPool(
+            initargs=[[], {}, {"queue_network": queue_network}],
         )
-        client_future_list.append(client_future)
 
-    pool.wait_results()
+        # spaw the process for the server
+        pool.submit(
+            forward,
+            server,
+            Common_config,
+            Client_config_list,
+            idx_fold,
+            base_dir_temp_local_models,
+            base_dir_client_weights
+        )
 
-    for idx_client in range(Common_config["num_clients"]):
-        current_client_future = client_future_list[idx_client]
-        current_client_results_allsubs = results_allsubs_list[idx_client]
-        (
-            current_client_best_test_acc_list,
-            current_client_best_test_loss_list,
-            current_client_optimal_test_acc_list,
-            current_client_optimal_test_loss_list
-        ) = current_client_future.result()
+        # spaw the process for the clients
+        client_future_list = []
+        for idx_client in range(Common_config["num_clients"]):
+            # get the config & results saving folder direction for the current client
+            client_config = Client_config_list[idx_client]
+            Client_base_dir = Client_base_dir_list[idx_client]
 
-        # Record the results for the single fold
-        partition_info = fold_partition_list[idx_client]
-        test_index = partition_info["test_set"][idx_fold]
+            # 获取当前client的划分信息
+            partition_info = fold_partition_list[idx_client]
+            test_index = partition_info[idx_fold]  # 取第一个（也是唯一一个）fold
 
-        # 假设返回的列表长度与test_index中的fold数量对应
-        for idx in range(len(test_index)):
-            current_client_results_allsubs.append(
-                np.array(
-                    [
-                        test_index[idx] + 1,
-                        current_client_best_test_acc_list[idx] if isinstance(current_client_best_test_acc_list,
-                                                                             list) else current_client_best_test_acc_list,
-                        current_client_best_test_loss_list[idx] if isinstance(current_client_best_test_loss_list,
-                                                                              list) else current_client_best_test_loss_list,
-                        current_client_optimal_test_acc_list[idx] if isinstance(current_client_optimal_test_acc_list,
-                                                                                list) else current_client_optimal_test_acc_list,
-                        current_client_optimal_test_loss_list[idx] if isinstance(current_client_optimal_test_loss_list,
-                                                                                 list) else current_client_optimal_test_loss_list,
-                    ]
-                )
+            # spaw the process for the client
+            client_future = pool.submit(
+                forward,
+                client,
+                idx_client,
+                idx_fold,
+                test_index,
+                Client_base_dir,
+                base_dir_temp_local_models,
+                Common_config,
+                client_config,
+                Data_array_list[idx_client],
             )
-    pool.shutdown()
+            client_future_list.append(client_future)
+
+        pool.wait_results()
+
+        for idx_client in range(Common_config["num_clients"]):
+            current_client_future = client_future_list[idx_client]
+            current_client_results_allsubs = results_allsubs_list[idx_client]
+            (
+                current_client_best_test_acc_list,
+                current_client_best_test_loss_list,
+                current_client_optimal_test_acc_list,
+                current_client_optimal_test_loss_list
+            ) = current_client_future.result()
+
+            # Record the results for the single fold
+            partition_info = fold_partition_list[idx_client]
+            test_index = partition_info[idx_fold]
+
+            # 假设返回的列表长度与test_index中的fold数量对应
+            for idx in range(len(test_index)):
+                current_client_results_allsubs.append(
+                    np.array(
+                        [
+                            test_index[idx] + 1,
+                            current_client_best_test_acc_list[idx] if isinstance(current_client_best_test_acc_list,
+                                                                                 list) else current_client_best_test_acc_list,
+                            current_client_best_test_loss_list[idx] if isinstance(current_client_best_test_loss_list,
+                                                                                  list) else current_client_best_test_loss_list,
+                            current_client_optimal_test_acc_list[idx] if isinstance(current_client_optimal_test_acc_list,
+                                                                                    list) else current_client_optimal_test_acc_list,
+                            current_client_optimal_test_loss_list[idx] if isinstance(current_client_optimal_test_loss_list,
+                                                                                     list) else current_client_optimal_test_loss_list,
+                        ]
+                    )
+                )
+        pool.shutdown()
 
     # Add the results into the final table
     for idx_client in range(Common_config["num_clients"]):

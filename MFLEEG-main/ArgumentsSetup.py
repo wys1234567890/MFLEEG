@@ -11,6 +11,11 @@ def assign_arguments():
         default="Fedavg",
         help="Aggregation strategy in the server",
     )
+    parser.add_argument(
+        "--Train_folds",
+        type=int,
+        default=5,
+    )
     args = parser.parse_args()
 
     Common_config = {
@@ -161,6 +166,7 @@ def assign_arguments():
 
     Client_config_list = []
     Common_config["server_aggregation"] = args.Server_aggregation
+    Common_config["train_folds"] = args.Train_folds
 
     # check the number of gpu
     num_gpu = torch.cuda.device_count()
