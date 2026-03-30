@@ -69,7 +69,7 @@ def client(
 
     for idx_round in range(Common_config["rounds"]):
         time_cost = local_train(
-            model, optimizer, lr_scheduler, target_train_dataloader, Client_config
+            model, optimizer, lr_scheduler, target_train_dataloader, Client_config, Common_config["proximal_mu"]
         )
         get_logger().info(
             "Client: {} ({}) finishes round {} training in {:.2f}s.".format(
@@ -273,7 +273,7 @@ def client(
 
 
 # define the local training function for one client
-def local_train(local_model, optimizer, lr_scheduler, data_loader, client_config):
+def local_train(local_model, optimizer, lr_scheduler, data_loader, client_config, mu):
     """
     Train the local model in the client within a certain epoch
     Args:
@@ -283,11 +283,13 @@ def local_train(local_model, optimizer, lr_scheduler, data_loader, client_config
         data_loader: local dataloader
         client_config: local config
         w_glob_keys: global layers' keys
+        mu: proximal_mu
 
     Returns:
         updated_local_model: the updated local models
     """
 
+    global_model = copy.deepcopy(local_model)
     loss_func = nn.NLLLoss()
     device = (
         str("cuda:" + client_config["device"]) if torch.cuda.is_available() else "cpu"
@@ -305,6 +307,12 @@ def local_train(local_model, optimizer, lr_scheduler, data_loader, client_config
             log_probs = local_model(data)
 
             loss = loss_func(log_probs, labels)
+            # Add FedProx regularization term
+            prox_loss = 0.0
+            for param_local, param_global in zip(local_model.parameters(), global_model.parameters()):
+                prox_loss += torch.sum((param_local - param_global) ** 2)
+
+            loss += (mu / 2) * prox_loss
             loss.backward()
             optimizer.step()
             lr_scheduler.step()

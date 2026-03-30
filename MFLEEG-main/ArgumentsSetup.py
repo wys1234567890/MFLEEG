@@ -16,6 +16,11 @@ def assign_arguments():
         type=int,
         default=5,
     )
+    parser.add_argument(
+        "--Proximal_mu",
+        type=float,
+        default=0.1,
+    )
     args = parser.parse_args()
 
     Common_config = {
@@ -167,6 +172,7 @@ def assign_arguments():
     Client_config_list = []
     Common_config["server_aggregation"] = args.Server_aggregation
     Common_config["train_folds"] = args.Train_folds
+    Common_config["mu"] = args.Proximal_mu
 
     # check the number of gpu
     num_gpu = torch.cuda.device_count()
