@@ -24,7 +24,7 @@ def assign_arguments():
         "data_path": r"/root/autodl-tmp/Dataset/filtered_data",
         "subject_wise": False,
         "split_ratio": 0.1,
-        "rounds": 250,
+        "rounds": 200,
         "save_checkingpoint": False,
         "checkingpoint_step": 5,
     }
@@ -40,7 +40,7 @@ def assign_arguments():
             "batch_size": 256,
             "test_batch_size": 64,
             "optim_type": "adamW",
-            "local_ep": 1,
+            "local_ep": 3,
             "momentum": 0.5,
             "lr": 0.01,
             "poolSize": {
@@ -62,7 +62,7 @@ def assign_arguments():
             "batch_size": 256,
             "test_batch_size": 64,
             "optim_type": "adamW",
-            "local_ep": 1,
+            "local_ep": 3,
             "momentum": 0.5,
             "lr": 0.005,
             "poolSize": {
@@ -84,7 +84,7 @@ def assign_arguments():
             "batch_size": 256,
             "test_batch_size": 64,
             "optim_type": "adamW",
-            "local_ep": 1,
+            "local_ep": 5,
             "momentum": 0.5,
             "lr": 0.005,
             "poolSize": {
@@ -106,7 +106,7 @@ def assign_arguments():
             "batch_size": 256,
             "test_batch_size": 64,
             "optim_type": "adamW",
-            "local_ep": 1,
+            "local_ep": 3,
             "momentum": 0.5,
             "lr": 0.01,
             "poolSize": {
@@ -128,7 +128,7 @@ def assign_arguments():
             "batch_size": 64,
             "test_batch_size": 64,
             "optim_type": "adamW",
-            "local_ep": 1,
+            "local_ep": 5,
             "momentum": 0.5,
             "lr": 0.01,
             "poolSize": {
@@ -150,7 +150,7 @@ def assign_arguments():
             "batch_size": 256,
             "test_batch_size": 64,
             "optim_type": "adamW",
-            "local_ep": 1,
+            "local_ep": 5,
             "momentum": 0.5,
             "lr": 0.01,
             "poolSize": {
