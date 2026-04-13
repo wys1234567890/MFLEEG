@@ -145,6 +145,8 @@ def TargetClientInitialization(
         nTime=TargetC_config["nTime"],
         poolSize=TargetC_config["poolSize"],
         localKernalSize=TargetC_config["localKernalSize"],
+        useSenet= Common_config["use_senet"],
+        fs= Common_config["server_aggregation"] == "FS"
     )
     target_model.train()
     get_logger().info(

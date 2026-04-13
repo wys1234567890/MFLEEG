@@ -1,6 +1,8 @@
 import torch
 import torch.nn as nn
 
+from SENet import SENet
+
 
 class deepConvNet(nn.Module):
     def convBlock(self, inF, outF, dropoutP, kernelSize, poolSize, *args, **kwargs):
@@ -18,9 +20,18 @@ class deepConvNet(nn.Module):
             nn.MaxPool2d(poolSize, stride=poolSize),
         )
 
-    def firstBlock(self, outF, dropoutP, kernalSize, nChan, poolSize, *args, **kwargs):
-        # 定义网络第一个卷积块（与通用块不同，多一层卷积）
-        # 新增参数nChan: 输入数据的通道数（如脑电信号的电极数）
+    def firstBlock(self, outF, dropoutP, kernalSize, nChan, poolSize, useSenet, *args, **kwargs):
+        if useSenet:
+            return nn.Sequential(
+                Conv2dWithConstraint(
+                    1, outF, kernalSize, padding=0, max_norm=2, *args, **kwargs
+                ),
+                SENet(nChan),
+                Conv2dWithConstraint(25, 25, (nChan, 1), padding=0, bias=False, max_norm=2),
+                nn.BatchNorm2d(outF),
+                nn.ELU(),
+                nn.MaxPool2d(poolSize, stride=poolSize),
+            )
         return nn.Sequential(
             Conv2dWithConstraint(
                 1, outF, kernalSize, padding=0, max_norm=2, *args, **kwargs
@@ -51,23 +62,28 @@ class deepConvNet(nn.Module):
         out = model(data).shape
         return out[2:]
 
-    def __init__(self, nChan, nTime, poolSize, localKernalSize):
+    def __init__(self, nChan, nTime, poolSize, localKernalSize, useSenet, fs):
         super().__init__()
+
 
         nClass = 2
         dropoutP = 0.5
         nFilt_FirstLayer = 25
         nFiltLaterLayer = [25, 50, 100, 200]
+        use_senet = useSenet
+        self.fs = fs
+        self.current_batch_feature = None
 
-        firstLayer = self.firstBlock(
+        self.firstLayer = self.firstBlock(
             nFilt_FirstLayer,
             dropoutP,
             localKernalSize["LocalLayers"][0],
             nChan,
             poolSize["LocalLayers"][0],
+            use_senet
         )
 
-        middleLayers = nn.Sequential(
+        self.middleLayers = nn.Sequential(
             *[
                 self.convBlock(inF, outF, dropoutP, kernalS, poolS)
                 for inF, outF, kernalS, poolS in zip(
@@ -78,7 +94,7 @@ class deepConvNet(nn.Module):
                 )
             ]
         )
-        firstGlobalLayer = self.convBlock(
+        self.firstGlobalLayer = self.convBlock(
             nFiltLaterLayer[-2],
             nFiltLaterLayer[-1],
             dropoutP,
@@ -87,7 +103,7 @@ class deepConvNet(nn.Module):
         )
 
         self.allButLastLayers = nn.Sequential(
-            firstLayer, middleLayers, firstGlobalLayer
+            self.firstLayer, self.middleLayers, self.firstGlobalLayer
         )
 
         self.fSize = self.calculateOutSize(self.allButLastLayers, nChan, nTime)
@@ -106,7 +122,11 @@ class deepConvNet(nn.Module):
         ]
 
     def forward(self, x):
+        # 修改
         x = self.allButLastLayers(x)
+        if self.fs:
+            self.current_batch_feature = x.detach().clone()
+
         x = self.lastLayer(x)
         x = torch.squeeze(x, 3)
         x = torch.squeeze(x, 2)

@@ -68,9 +68,16 @@ def client(
         queue_network.send_to_server(w_glob_keys, idx_client)
 
     for idx_round in range(Common_config["rounds"]):
-        time_cost = local_train(
-            model, optimizer, lr_scheduler, target_train_dataloader, Client_config, Common_config["proximal_mu"]
-        )
+        if Common_config["server_aggregation"] == "FS":
+            time_cost, mean_feature = local_train(
+                model, optimizer, lr_scheduler, target_train_dataloader, Client_config, Common_config["use_fedprox"],
+                Common_config["proximal_mu"], True
+            )
+        else:
+            time_cost = local_train(
+                model, optimizer, lr_scheduler, target_train_dataloader, Client_config, Common_config["use_fedprox"], Common_config["proximal_mu"], False
+            )
+
         get_logger().info(
             "Client: {} ({}) finishes round {} training in {:.2f}s.".format(
             Client_config["name"],
@@ -92,7 +99,11 @@ def client(
         # save the dictionary
         temp_local_model_filename = os.path.join(temp_local_model_path, "Client_{}.pt".format(Client_config["name"]))
         torch.save(global_layers_model, temp_local_model_filename)
-        queue_network.send_to_server(temp_local_model_filename, idx_client)
+
+        if Common_config["server_aggregation"] == "FS":
+            queue_network.send_to_server([temp_local_model_filename, mean_feature], idx_client)
+        else:
+            queue_network.send_to_server(temp_local_model_filename, idx_client)
 
         # Wait for the updated global layer from the server
         while True:
@@ -273,7 +284,7 @@ def client(
 
 
 # define the local training function for one client
-def local_train(local_model, optimizer, lr_scheduler, data_loader, client_config, mu):
+def local_train(local_model, optimizer, lr_scheduler, data_loader, client_config, use_fedprox, mu, fs):
     """
     Train the local model in the client within a certain epoch
     Args:
@@ -283,6 +294,7 @@ def local_train(local_model, optimizer, lr_scheduler, data_loader, client_config
         data_loader: local dataloader
         client_config: local config
         w_glob_keys: global layers' keys
+        use_fedprox: whether use fedprox or not
         mu: proximal_mu
 
     Returns:
@@ -295,6 +307,7 @@ def local_train(local_model, optimizer, lr_scheduler, data_loader, client_config
         str("cuda:" + client_config["device"]) if torch.cuda.is_available() else "cpu"
     )
     client_data_loader = data_loader
+    global_model.to(device)
     local_model.to(device)
     local_model.train()
     start_time = time.time()
@@ -307,19 +320,39 @@ def local_train(local_model, optimizer, lr_scheduler, data_loader, client_config
             log_probs = local_model(data)
 
             loss = loss_func(log_probs, labels)
-            # Add FedProx regularization term
-            prox_loss = 0.0
-            for param_local, param_global in zip(local_model.parameters(), global_model.parameters()):
-                prox_loss += torch.sum((param_local - param_global) ** 2)
 
-            loss += (mu / 2) * prox_loss
+            if use_fedprox:
+                # Add FedProx regularization term
+                prox_loss = 0.0
+                for param_local, param_global in zip(local_model.parameters(), global_model.parameters()):
+                    prox_loss += torch.sum((param_local - param_global) ** 2)
+
+                loss += (mu / 2) * prox_loss
+
             loss.backward()
             optimizer.step()
             lr_scheduler.step()
 
+    if fs:
+        local_features = []
+        local_model.eval()
+        with torch.no_grad():
+            for data, labels in client_data_loader:
+                data, labels = data.to(device), labels.to(device)
+                log_probs = local_model(data)
+                local_features.append(local_model.current_batch_feature)
+
+        # 合并后求平均
+        all_features = torch.cat(local_features, dim=0)
+        mean_feature = all_features.mean(dim=0)
+
+
     time_cost = time.time() - start_time
 
-    return time_cost
+    if fs:
+        return time_cost, mean_feature
+    else:
+        return time_cost
 
 
 

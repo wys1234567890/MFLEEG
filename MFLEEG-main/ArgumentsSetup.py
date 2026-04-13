@@ -8,7 +8,7 @@ def assign_arguments():
     parser.add_argument(
         "--Server_aggregation",
         type=str,
-        default="Fedavg",
+        default="FS",
         help="Aggregation strategy in the server",
     )
     parser.add_argument(
@@ -17,9 +17,19 @@ def assign_arguments():
         default=5,
     )
     parser.add_argument(
+        "--Use_fedprox",
+        type=bool,
+        default=False,
+    )
+    parser.add_argument(
         "--Proximal_mu",
         type=float,
-        default=0.1,
+        default=0.01,
+    )
+    parser.add_argument(
+        "--Use_senet",
+        type=bool,
+        default=False,
     )
     args = parser.parse_args()
 
@@ -29,7 +39,7 @@ def assign_arguments():
         "data_path": r"/root/autodl-tmp/Dataset/filtered_data",
         "subject_wise": False,
         "split_ratio": 0.1,
-        "rounds": 200,
+        "rounds": 250,
         "save_checkingpoint": False,
         "checkingpoint_step": 5,
     }
@@ -45,7 +55,7 @@ def assign_arguments():
             "batch_size": 256,
             "test_batch_size": 64,
             "optim_type": "adamW",
-            "local_ep": 3,
+            "local_ep": 1,
             "momentum": 0.5,
             "lr": 0.01,
             "poolSize": {
@@ -67,7 +77,7 @@ def assign_arguments():
             "batch_size": 256,
             "test_batch_size": 64,
             "optim_type": "adamW",
-            "local_ep": 3,
+            "local_ep": 1,
             "momentum": 0.5,
             "lr": 0.005,
             "poolSize": {
@@ -89,7 +99,7 @@ def assign_arguments():
             "batch_size": 256,
             "test_batch_size": 64,
             "optim_type": "adamW",
-            "local_ep": 5,
+            "local_ep": 1,
             "momentum": 0.5,
             "lr": 0.005,
             "poolSize": {
@@ -111,7 +121,7 @@ def assign_arguments():
             "batch_size": 256,
             "test_batch_size": 64,
             "optim_type": "adamW",
-            "local_ep": 3,
+            "local_ep": 1,
             "momentum": 0.5,
             "lr": 0.01,
             "poolSize": {
@@ -133,7 +143,7 @@ def assign_arguments():
             "batch_size": 64,
             "test_batch_size": 64,
             "optim_type": "adamW",
-            "local_ep": 5,
+            "local_ep": 1,
             "momentum": 0.5,
             "lr": 0.01,
             "poolSize": {
@@ -155,7 +165,7 @@ def assign_arguments():
             "batch_size": 256,
             "test_batch_size": 64,
             "optim_type": "adamW",
-            "local_ep": 5,
+            "local_ep": 1,
             "momentum": 0.5,
             "lr": 0.01,
             "poolSize": {
@@ -172,7 +182,9 @@ def assign_arguments():
     Client_config_list = []
     Common_config["server_aggregation"] = args.Server_aggregation
     Common_config["train_folds"] = args.Train_folds
-    Common_config["mu"] = args.Proximal_mu
+    Common_config["proximal_mu"] = args.Proximal_mu
+    Common_config["use_fedprox"] = args.Use_fedprox
+    Common_config["use_senet"] = args.Use_senet
 
     # check the number of gpu
     num_gpu = torch.cuda.device_count()
