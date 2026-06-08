@@ -160,52 +160,67 @@ def FS(Common_config, local_state_dicts, w_glob_keys, client_config_list, client
       2. 计算每个客户端与全局中心的余弦相似度
       3. 相似度 × 样本量 = 最终聚合权重
       """
-    num_clients = Common_config["num_clients"]
-    eps = 0.05  # 防止权重为负/零
+    with torch.no_grad():
+        num_clients = Common_config["num_clients"]
+        eps = 0.05  # 防止权重为负/零
 
-    # 1. 取出所有客户端特征
-    feature_list = [client_feature_dict[idx] for idx in range(num_clients)]
-    feature_tensor = torch.stack(feature_list)
+        # 1. 取出所有客户端特征
+        feature_list = [client_feature_dict[idx] for idx in range(num_clients)]
+        feature_tensor = torch.stack(feature_list)
 
-    global_center = torch.mean(feature_tensor, dim=0)
+        global_center = torch.mean(feature_tensor, dim=0)
 
-    client_similarity = []
-    for idx in range(num_clients):
-        feat = feature_list[idx]
-        sim = torch.cosine_similarity(feat.flatten().unsqueeze(0),   # 🔥 [200,1,7] → [1400] → [1,1400]
-                global_center.flatten().unsqueeze(0)).item()
-        sim = max(sim, eps)  # 下限阈值
-        client_similarity.append(sim)
+        client_similarity = []
+        for idx in range(num_clients):
+            feat = feature_list[idx]
+            if Common_config["similarity_strategy"] == "Cos":
+                sim = torch.cosine_similarity(feat.flatten().unsqueeze(0),   # 🔥 [200,1,7] → [1400] → [1,1400]
+                        global_center.flatten().unsqueeze(0)).item()
+            elif Common_config["similarity_strategy"] == "Pearson":
+                x = feat.flatten()
+                y = global_center.flatten()
+                x_mean = x - torch.mean(x)
+                y_mean = y - torch.mean(y)
+                # 皮尔逊公式
+                numerator = torch.sum(x_mean * y_mean)
+                denominator = torch.sqrt(torch.sum(x_mean ** 2)) * torch.sqrt(torch.sum(y_mean ** 2))
+                sim = (numerator / (denominator + 1e-8)).item()  # +1e-8 防止除0
+            elif Common_config["similarity_strategy"] == "Euclidean":
+                dist = torch.norm(feat.flatten().unsqueeze(0) - global_center.flatten().unsqueeze(0), p=2).item()
+                sim = 1.0 / (1.0 + dist)  # 反比例相似度，范围 [0,1]
 
-    # 4. 计算最终权重：样本数 × 相似度
-    total_weight = 0.0
-    client_weights = []
-    client_nums = []
+            sim = max(sim, eps)  # 下限阈值
+            client_similarity.append(sim)
 
-    for idx in range(num_clients):
-        n = client_config_list[idx]["num_samples"]
-        s = client_similarity[idx]
-        w = n * s
-        client_weights.append(w)
-        total_weight += w
+        # 4. 计算最终权重：样本数 × 相似度
+        total_weight = 0.0
+        client_weights = []
+        client_nums = []
 
-    # 归一化权重
-    client_weights = [w / total_weight for w in client_weights]
+        for idx in range(num_clients):
+            n = client_config_list[idx]["num_samples"]
+            s = client_similarity[idx]
+            w = n * s
+            client_weights.append(w)
+            total_weight += w
 
-    # 5. 加权聚合全局模型
-    global_layer_model_weights = None
-    for idx in range(num_clients):
-        local_dict = local_state_dicts[idx]
-        w = client_weights[idx]
+        # 归一化权重
+        client_weights = [w / total_weight for w in client_weights]
 
-        if global_layer_model_weights is None:
-            global_layer_model_weights = {}
-            for k in w_glob_keys:
-                global_layer_model_weights[k] = copy.deepcopy(local_dict[k].cpu()) * w
-        else:
-            for k in w_glob_keys:
-                global_layer_model_weights[k] += local_dict[k].cpu() * w
+        # 5. 加权聚合全局模型
+        global_layer_model_weights = None
+        for idx in range(num_clients):
+            local_dict = local_state_dicts[idx]
+            w = client_weights[idx]
 
-    return global_layer_model_weights, client_weights
+            if global_layer_model_weights is None:
+                global_layer_model_weights = {}
+                for k in w_glob_keys:
+                    global_layer_model_weights[k] = copy.deepcopy(local_dict[k].cpu()) * w
+            else:
+                for k in w_glob_keys:
+                    global_layer_model_weights[k] += local_dict[k].cpu() * w
+
+        return global_layer_model_weights, client_weights
 
 

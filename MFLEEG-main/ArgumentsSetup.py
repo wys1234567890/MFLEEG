@@ -12,6 +12,11 @@ def assign_arguments():
         help="Aggregation strategy in the server",
     )
     parser.add_argument(
+        "--Similarity_strategy",
+        type=str,
+        default="Euclidean",
+    )
+    parser.add_argument(
         "--Train_folds",
         type=int,
         default=5,
@@ -181,6 +186,7 @@ def assign_arguments():
 
     Client_config_list = []
     Common_config["server_aggregation"] = args.Server_aggregation
+    Common_config["similarity_strategy"] = args.Similarity_strategy
     Common_config["train_folds"] = args.Train_folds
     Common_config["proximal_mu"] = args.Proximal_mu
     Common_config["use_fedprox"] = args.Use_fedprox
